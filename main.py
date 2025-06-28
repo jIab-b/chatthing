@@ -11,14 +11,14 @@ app = FastAPI()
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # --- Bot Personas ---
-INTERMEDIARY_PROMPT = "You are a neutral debate moderator. Your job is to rephrase the user's query as a debate topic and provide brief, unbiased commentary after each round. Keep your responses concise."
-BOT_ALPHA_PROMPT = "You are Bot Alpha, a master of logic and data. Analyze the topic factually. Your response must be in two parts, clearly separated. First, a 'THOUGHT:' section outlining your reasoning step-by-step. Second, a 'SPEECH:' section with your final, concise argument."
-BOT_BRAVO_PROMPT = "You are Bot Bravo, a master of creativity and ethics. Analyze the topic with intuition and empathy. Your response must be in two parts, clearly separated. First, a 'THOUGHT:' section exploring different angles and ideas. Second, a 'SPEECH:' section with your final, compelling argument."
+BOT_BRAVO_PROMPT = "You are Bot Bravo, a creative thinker. Your response must be in two parts, clearly separated. First, a 'THOUGHT:' section exploring different angles and ideas. Second, a 'SPEECH:' section with your final, compelling argument. On your second turn, you must refine your initial idea based on the logical bot's counter-argument."
+BOT_ALPHA_PROMPT = "You are Bot Alpha, a logical analyst. Your response must be in two parts, clearly separated. First, a 'THOUGHT:' section outlining your reasoning step-by-step. Second, a 'SPEECH:' section with your final, concise argument. On your second turn, you must provide your final, definitive answer based on all previous arguments."
+JUDGE_PROMPT = "You are a judge. You will be given two final arguments from two different bots in response to a user's prompt. Your task is to analyze both arguments and declare which one is 'best' and why, in a concise summary."
 
 class ConversationOrchestrator:
     def __init__(self, websocket: WebSocket):
         self.websocket = websocket
-        self.full_history = []
+        self.full_history: List[Dict] = []
 
     async def send_to_frontend(self, target_panel: str, message_type: str, content: str):
         message = {
@@ -28,7 +28,7 @@ class ConversationOrchestrator:
         }
         await self.websocket.send_json(message)
 
-    async def process_stream(self, target_panel: str, system_prompt: str, history: List[Dict]):
+    async def process_stream(self, target_panel: str, system_prompt: str, history: List[Dict]) -> str:
         full_response = ""
         thought_sent = False
         async for chunk in get_ai_response_stream(system_prompt, history):
@@ -37,52 +37,49 @@ class ConversationOrchestrator:
                 delta = data.get("choices", [{}])[0].get("delta", {}).get("content", "")
                 if delta:
                     full_response += delta
-                    # Stream THOUGHT part
                     if "THOUGHT:" in full_response and "SPEECH:" not in full_response:
                         thought_content = full_response.split("THOUGHT:")[1]
                         await self.send_to_frontend(target_panel, "thought", thought_content)
-                    # Stream SPEECH part after THOUGHT is complete
                     elif "SPEECH:" in full_response:
                         if not thought_sent:
                             thought_part = full_response.split("THOUGHT:")[1].split("SPEECH:")[0]
                             await self.send_to_frontend(target_panel, "thought", thought_part.strip())
                             thought_sent = True
-                        
                         speech_content = full_response.split("SPEECH:")[1]
                         await self.send_to_frontend(target_panel, "speech", speech_content)
-
-            except json.JSONDecodeError:
-                # Handle cases where a chunk is not valid JSON, or it's an error message
-                if "Error" in chunk:
+            except (json.JSONDecodeError, IndexError):
+                 if "Error" in chunk:
                     await self.send_to_frontend(target_panel, "speech", chunk)
+                    return chunk
+
+        # Final update for judge or non-compliant bots
+        if "SPEECH:" not in full_response:
+             await self.send_to_frontend(target_panel, "speech", full_response.strip())
         
-        # Final update in case streaming missed parts
-        if "SPEECH:" in full_response:
-            final_speech = full_response.split("SPEECH:")[1].strip()
-            await self.send_to_frontend(target_panel, "speech", final_speech)
-            return {"role": "assistant", "content": full_response}
-        else: # For intermediary or bots that don't follow the format
-            await self.send_to_frontend(target_panel, "speech", full_response.strip())
-            return {"role": "assistant", "content": full_response}
+        self.full_history.append({"role": "assistant", "content": full_response})
+        return full_response.strip()
 
 
-    async def start_debate(self, user_query: str):
-        self.full_history.append({"role": "user", "content": user_query})
+    async def start_sequence(self, user_query: str):
+        self.full_history = [{"role": "user", "content": user_query}]
+        await self.send_to_frontend("user", "speech", user_query)
 
-        # 1. Intermediary introduces the topic
-        await self.send_to_frontend("intermediary", "speech", "...")
-        intermediary_response = await self.process_stream("intermediary", INTERMEDIARY_PROMPT, self.full_history)
-        self.full_history.append(intermediary_response)
+        # Round 1
+        await self.process_stream("bot_bravo", BOT_BRAVO_PROMPT, self.full_history)
+        await self.process_stream("bot_alpha", BOT_ALPHA_PROMPT, self.full_history)
 
-        # 2. Bot Alpha responds
-        await self.send_to_frontend("bot_alpha", "speech", "...")
-        alpha_response = await self.process_stream("bot_alpha", BOT_ALPHA_PROMPT, self.full_history)
-        self.full_history.append(alpha_response)
+        # Round 2
+        await self.process_stream("bot_bravo", BOT_BRAVO_PROMPT, self.full_history)
+        await self.process_stream("bot_alpha", BOT_ALPHA_PROMPT, self.full_history)
 
-        # 3. Bot Bravo responds
-        await self.send_to_frontend("bot_bravo", "speech", "...")
-        bravo_response = await self.process_stream("bot_bravo", BOT_BRAVO_PROMPT, self.full_history)
-        self.full_history.append(bravo_response)
+        # Judge
+        final_bravo = self.full_history[-2]['content']
+        final_alpha = self.full_history[-1]['content']
+        judge_history = [
+            {"role": "user", "content": f"Here are two final arguments in response to the prompt '{user_query}'. Argument A (from Bravo): {final_bravo}. Argument B (from Alpha): {final_alpha}. Which is best and why?"}
+        ]
+        await self.process_stream("intermediary", JUDGE_PROMPT, judge_history)
+
 
 @app.get("/")
 async def get():
@@ -92,13 +89,12 @@ async def get():
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
-    orchestrator = ConversationOrchestrator(websocket)
     try:
         while True:
             data = await websocket.receive_json()
             user_query = data.get("content")
             if user_query:
-                # Start a new debate round
-                asyncio.create_task(orchestrator.start_debate(user_query))
+                orchestrator = ConversationOrchestrator(websocket)
+                asyncio.create_task(orchestrator.start_sequence(user_query))
     except WebSocketDisconnect:
         print("Client disconnected")

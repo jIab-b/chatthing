@@ -48,6 +48,10 @@ body {
     flex-shrink: 0;
 }
 
+#intermediary-panel h2 {
+    color: #dcdcaa;
+}
+
 #competitors-panel {
     flex-grow: 1;
     display: flex;
@@ -61,6 +65,9 @@ body {
     display: flex;
     flex-direction: column;
 }
+
+#bot-alpha-panel h2 { color: #9cdcfe; }
+#bot-bravo-panel h2 { color: #c586c0; }
 
 .content-area {
     flex-grow: 1;

@@ -24,16 +24,20 @@ document.addEventListener("DOMContentLoaded", () => {
         ws.onopen = () => {
             console.log("Connected to WebSocket");
             sendButton.disabled = false;
-            sendButton.textContent = "Start Debate";
+            sendButton.textContent = "Start Sequence";
         };
 
         ws.onmessage = (event) => {
             const message = JSON.parse(event.data);
             const { target_panel, message_type, content } = message;
 
+            if (target_panel === 'user') {
+                // Maybe display user message somewhere if needed, for now we ignore
+                return;
+            }
+
             const targetElement = panels[target_panel]?.[message_type];
             if (targetElement) {
-                // For streaming, we replace the content.
                 targetElement.textContent = content;
                 targetElement.scrollTop = targetElement.scrollHeight;
             }
@@ -43,7 +47,7 @@ document.addEventListener("DOMContentLoaded", () => {
             console.log("WebSocket disconnected. Reconnecting...");
             sendButton.disabled = true;
             sendButton.textContent = "Connecting...";
-            setTimeout(connect, 3000); // Attempt to reconnect every 3 seconds
+            setTimeout(connect, 3000);
         };
 
         ws.onerror = (error) => {
@@ -52,10 +56,10 @@ document.addEventListener("DOMContentLoaded", () => {
         };
     }
 
-    const startDebate = () => {
+    const startSequence = () => {
         const messageContent = messageInput.value;
         if (messageContent.trim() !== "" && ws.readyState === WebSocket.OPEN) {
-            // Clear all panels for the new debate
+            // Clear all panels for the new sequence
             Object.values(panels).forEach(panel => {
                 Object.values(panel).forEach(element => {
                     element.textContent = "";
@@ -67,10 +71,10 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     };
 
-    sendButton.addEventListener("click", startDebate);
+    sendButton.addEventListener("click", startSequence);
     messageInput.addEventListener("keypress", (event) => {
         if (event.key === "Enter") {
-            startDebate();
+            startSequence();
         }
     });
 
