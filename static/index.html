@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Debate Arena</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div id="arena-container">
+        <div id="intermediary-panel" class="panel">
+            <h2>Moderator</h2>
+            <div id="intermediary-speech" class="speech-bubble"></div>
+        </div>
+        <div id="competitors-panel">
+            <div id="bot-alpha-panel" class="panel">
+                <h2>Bot Alpha (Logic)</h2>
+                <div class="content-area">
+                    <h3>Thought</h3>
+                    <div id="bot-alpha-thought" class="thought-bubble"></div>
+                    <h3>Speech</h3>
+                    <div id="bot-alpha-speech" class="speech-bubble"></div>
+                </div>
+            </div>
+            <div id="bot-bravo-panel" class="panel">
+                <h2>Bot Bravo (Creative)</h2>
+                <div class="content-area">
+                    <h3>Thought</h3>
+                    <div id="bot-bravo-thought" class="thought-bubble"></div>
+                    <h3>Speech</h3>
+                    <div id="bot-bravo-speech" class="speech-bubble"></div>
+                </div>
+            </div>
+        </div>
+        <div id="user-input-container">
+            <input type="text" id="message-input" placeholder="Enter a topic to debate...">
+            <button id="send-button">Start Debate</button>
+        </div>
+    </div>
+    <script src="/static/script.js"></script>
+</body>
+</html>
